@@ -270,8 +270,8 @@ class Travel:
                        ncity,  # Number of cities
                        n  # [1] Path start [2] Path end [3] Destination
                        ):
-        xx = np.zeros(7)
-        yy = np.zeros(7)
+        xx = np.zeros(6)
+        yy = np.zeros(6)
 
         n[3] = 1 + (n[2] % ncity)  # City following n[3]
         n[4] = 1 + ((n[0] + ncity - 2) % ncity)  # City preceding n[1]
@@ -280,19 +280,19 @@ class Travel:
         #  Extract co-ordinates for the six cities involved
         for j in range(0, 6):  # (j = 1; j <= 6; j++):
             ii = iorder[n[j]]
-            xx[j + 1] = x[ii]
-            yy[j + 1] = y[ii]
+            xx[j] = x[ii]
+            yy[j] = y[ii]
 
         """ Calculate the cost of disconnecting the path
            segment from n[1] to n[2], aplicing it in
            between the two adjacent cities n[3] and n[4],
            and connecting n[5] to n[6]. """
-        de = -Travel.alen(xx[2], xx[6], yy[2], yy[6]) - \
-            Travel.alen(xx[1], xx[5], yy[1], yy[5]) - \
-            Travel.alen(xx[3], xx[4], yy[3], yy[4]) + \
+        de = -Travel.alen(xx[1], xx[5], yy[1], yy[5]) - \
+            Travel.alen(xx[0], xx[4], yy[0], yy[4]) - \
+            Travel.alen(xx[2], xx[3], yy[2], yy[3]) + \
+            Travel.alen(xx[0], xx[2], yy[0], yy[2]) + \
             Travel.alen(xx[1], xx[3], yy[1], yy[3]) + \
-            Travel.alen(xx[2], xx[4], yy[2], yy[4]) + \
-            Travel.alen(xx[5], xx[6], yy[5], yy[6])
+            Travel.alen(xx[4], xx[5], yy[4], yy[5])
 
         return de, n
 
