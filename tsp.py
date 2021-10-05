@@ -17,8 +17,8 @@ class Travel:
 
     def __init__(self, goal, ncity):
         self.ncity = ncity
-        self.x = np.zeros(self.ncity + 1)  # Array of X co-ordinates
-        self.y = np.zeros(self.ncity + 1)  # Array of Y co-ordinates
+        self.x = np.zeros(self.ncity)  # Array of X co-ordinates
+        self.y = np.zeros(self.ncity)  # Array of Y co-ordinates
         self.iorder = np.zeros(self.ncity + 1, dtype=np.int32)  # Order of traversal
 
         # -----------
@@ -42,9 +42,9 @@ class Travel:
 
         # Calculate length of initial path, wrapping circularly
         self.path = 0.0
-        for i in range(1, self.ncity):  # TODO 1 indexing?
-            i1 = self.iorder[i]
-            i2 = self.iorder[i + 1]
+        for i in range(self.ncity - 1):  # TODO 1 indexing?
+            i1 = self.iorder[i + 1]
+            i2 = self.iorder[i + 2]
             self.path += Travel.alen(self.x[i1], self.x[i2], self.y[i1], self.y[i2])
 
         i1 = self.iorder[self.ncity]
@@ -57,23 +57,23 @@ class Travel:
     #  Create a new problem, allocating arrays
     def new_problem(self, ncities):
         self.ncity = ncities
-        self.x = np.zeros(self.ncity + 1)  # Array of X co-ordinates
-        self.y = np.zeros(self.ncity + 1)  # Array of Y co-ordinates
+        self.x = np.zeros(self.ncity)  # Array of X co-ordinates
+        self.y = np.zeros(self.ncity)  # Array of Y co-ordinates
         self.iorder = np.zeros(self.ncity + 1)  # Order of traversal
 
     #  Randomly position cities on the map and set initial order
     def place_cities(self):
-        for i in range(1, self.ncity + 1):
+        for i in range(self.ncity):
             self.x[i] = random.random()
             self.y[i] = random.random()
-            self.iorder[i] = i
+            self.iorder[i + 1] = i
 
     #  Add a city at specified co-ordinates
     def add_city(self, x, y):
         self.ncity += 1
         self.x[self.ncity] = x
         self.y[self.ncity] = y
-        self.iorder[self.ncity] = self.ncity
+        self.iorder[self.ncity + 1] = self.ncity
 
     #  Perform solution in one whack
     def solve(self, goal, tracing):
@@ -87,8 +87,8 @@ class Travel:
         the next (wrapping around at the bottom).  """
     def show_path(self):
         print("     City        X         Y       Cost")
-        for i in range(1, self.ncity + 1):
-            ii = self.iorder[i]
+        for i in range(self.ncity):
+            ii = self.iorder[i + 1]
             jj = self.iorder[1 if i == self.ncity else (i + 1)]
             cost = Travel.alen(self.x[ii], self.x[jj], self.y[ii], self.y[jj])
             print("     "
@@ -106,7 +106,7 @@ class Travel:
             lx.append(self.x[ind])
             ly.append(self.y[ind])
 
-        plt.scatter(self.x[1:], self.y[1:])
+        plt.scatter(self.x, self.y)
         plt.plot(lx, ly)
         plt.show()
 
@@ -308,7 +308,6 @@ class Travel:
         m1 = 1 + ((n[1] - n[0] + ncity) % ncity)  # Cities from n[1] to n[2]
         m2 = 1 + ((n[4] - n[3] + ncity) % ncity)  # Cities from n[4] to n[5]
         m3 = 1 + ((n[2] - n[5] + ncity) % ncity)  # Cities from n[6] to n[3]
-        print(n)
 
         nn = 1
         #  Copy the chosen segment
@@ -363,7 +362,7 @@ class Travel:
         self.path += Travel.alen(self.x[i1], self.x[i2], self.y[i1], self.y[i2])
 
         # Calculate length of initial path, wrapping circularly
-        for j in range(1, (self.ncity * 4) + 1):  # (j = 1; i <= (ncity * 4); j++):
+        for j in range(self.ncity * 4):  # (j = 1; i <= (ncity * 4); j++):
             # if j == 5:
             #     break
             if self.solve_step():
