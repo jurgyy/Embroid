@@ -215,21 +215,21 @@ class Travel:
                       ncity,  # Number of cities
                       n  # Array n[1] = start city n[2] = end city
                       ):
-        xx = np.zeros(7)
-        yy = np.zeros(7)
+        xx = np.zeros(6)
+        yy = np.zeros(6)
 
         n[2] = 1 + ((n[0] + ncity - 2) % ncity)
         n[3] = 1 + (n[1] % ncity)
 
-        for j in range(1, 5):  # (j = 1; j <= 4; j++):
-            ii = iorder[n[j - 1]]
+        for j in range(0, 4):  # (j = 1; j <= 4; j++):
+            ii = iorder[n[j]]
             xx[j] = x[ii]
             yy[j] = y[ii]
 
-        de = -Travel.alen(xx[1], xx[3], yy[1], yy[3]) - \
-            Travel.alen(xx[2], xx[4], yy[2], yy[4]) + \
-            Travel.alen(xx[1], xx[4], yy[1], yy[4]) + \
-            Travel.alen(xx[2], xx[3], yy[2], yy[3])
+        de = -Travel.alen(xx[0], xx[2], yy[0], yy[2]) - \
+            Travel.alen(xx[1], xx[3], yy[1], yy[3]) + \
+            Travel.alen(xx[0], xx[3], yy[0], yy[3]) + \
+            Travel.alen(xx[1], xx[2], yy[1], yy[2])
 
         return de
 
