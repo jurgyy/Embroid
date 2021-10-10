@@ -19,7 +19,7 @@ class Travel:
         self.ncity = ncity
         self.x = np.zeros(self.ncity)  # Array of X co-ordinates
         self.y = np.zeros(self.ncity)  # Array of Y co-ordinates
-        self.iorder = np.zeros(self.ncity + 1, dtype=np.int32)  # Order of traversal
+        self.iorder = np.zeros(self.ncity, dtype=np.int32)  # Order of traversal
 
         # -----------
 
@@ -42,13 +42,13 @@ class Travel:
 
         # Calculate length of initial path, wrapping circularly
         self.path = 0.0
-        for i in range(self.ncity - 1):  # TODO 1 indexing?
-            i1 = self.iorder[i + 1]
-            i2 = self.iorder[i + 2]
+        for i in range(self.ncity - 1):
+            i1 = self.iorder[i]
+            i2 = self.iorder[i + 1]
             self.path += Travel.alen(self.x[i1], self.x[i2], self.y[i1], self.y[i2])
 
-        i1 = self.iorder[self.ncity]
-        i2 = self.iorder[1]
+        i1 = self.iorder[self.ncity - 1]
+        i2 = self.iorder[0]
         self.path += Travel.alen(self.x[i1], self.x[i2], self.y[i1], self.y[i2])
 
         self.de = 0
@@ -59,21 +59,21 @@ class Travel:
         self.ncity = ncities
         self.x = np.zeros(self.ncity)  # Array of X co-ordinates
         self.y = np.zeros(self.ncity)  # Array of Y co-ordinates
-        self.iorder = np.zeros(self.ncity + 1)  # Order of traversal
+        self.iorder = np.zeros(self.ncity)  # Order of traversal
 
     #  Randomly position cities on the map and set initial order
     def place_cities(self):
         for i in range(self.ncity):
             self.x[i] = random.random()
             self.y[i] = random.random()
-            self.iorder[i + 1] = i
+            self.iorder[i] = i
 
     #  Add a city at specified co-ordinates
     def add_city(self, x, y):
         self.ncity += 1
         self.x[self.ncity] = x
         self.y[self.ncity] = y
-        self.iorder[self.ncity + 1] = self.ncity
+        self.iorder[self.ncity] = self.ncity
 
     #  Perform solution in one whack
     def solve(self, goal, tracing):
@@ -88,8 +88,8 @@ class Travel:
     def show_path(self):
         print("     City        X         Y       Cost")
         for i in range(self.ncity):
-            ii = self.iorder[i + 1]
-            jj = self.iorder[1 if i == self.ncity else (i + 1)]
+            ii = self.iorder[i]
+            jj = self.iorder[0 if i == self.ncity - 1 else (i + 1)]
             cost = Travel.alen(self.x[ii], self.x[jj], self.y[ii], self.y[jj])
             print("     "
                   + Travel.ffixed(ii, 3, 0)
@@ -102,7 +102,7 @@ class Travel:
 
         lx = []
         ly = []
-        for ind in self.iorder[1:]:
+        for ind in self.iorder:
             lx.append(self.x[ind])
             ly.append(self.y[ind])
 
@@ -117,23 +117,15 @@ class Travel:
         be returned.  If the number is so small it
         would be displayed as all zeroes, it is
         returned in exponential form.  """
-
     @staticmethod
     def ffixed(n, width, decimals):
-        # var e = n.toFixed(decimals);
-        # if (e === ("0." + (new Array(decimals + 1).join('0')))):
-        #     e = n.toPrecision(decimals - 2);
-        #
-        # var s = (new Array(width + 1).join(' ')) + e;
-        # return s.substring(s.length - Math.max(width, e.length));
         if isinstance(n, int) or isinstance(n, np.int32):
             return str(n)
         return f"{n:{width}.{decimals}}"
 
-    #  Return a random bit as a Boolean value
-
     @staticmethod
     def irbit1():
+        #  Return a random bit as a Boolean value
         return random.random() < 0.5
 
     """  Calculate logical length between two points in the plane
@@ -155,8 +147,8 @@ class Travel:
         for k in range(1, self.nover + 1):  # (var k = 1; k <= self.nover; k++):
             while True:
                 #  Randomly choose the start and end of the segment
-                self.n[0] = 1 + (int(self.ncity * random.random()))
-                self.n[1] = 1 + (int((self.ncity - 1) * random.random()))
+                self.n[0] = (int(self.ncity * random.random()))
+                self.n[1] = (int((self.ncity - 1) * random.random()))
                 if self.n[1] >= self.n[0]:
                     self.n[1] = self.n[1] + 1
 
@@ -165,13 +157,11 @@ class Travel:
 
                 if nn >= 3:
                     break
-
             """  Randomly decide whether to try reversing the segment
                 or transporting it elsewhere in the path.  """
             if Travel.irbit1():
                 #  Transport: randomly pick a destination outside the path
-                self.n[2] = self.n[1] + (int(abs(nn - 2) * random.random())) + 1
-                self.n[2] = 1 + ((self.n[2] - 1) % self.ncity)
+                self.n[2] = (self.n[1] + (int(abs(nn - 2) * random.random())) + 1) % self.ncity
 
                 #  Calculate cost of transporting the segment
                 z = self.transport_cost(self.x, self.y, self.iorder, self.ncity, self.n)
@@ -218,8 +208,8 @@ class Travel:
         xx = np.zeros(6)
         yy = np.zeros(6)
 
-        n[2] = 1 + ((n[0] + ncity - 2) % ncity)
-        n[3] = 1 + (n[1] % ncity)
+        n[2] = (n[0] - 1) % ncity  # City preceding n[0]
+        n[3] = (n[1] + 1) % ncity  # City following n[1]
 
         for j in range(0, 4):  # (j = 1; j <= 4; j++):
             ii = iorder[n[j]]
@@ -240,11 +230,14 @@ class Travel:
                 ncity,  # Number of cities
                 n  # Path to be reversed [1] = start, [2] = end
                 ):
-
+        # This many cities must be swapped to effect the reversal.
         nn = (1 + ((n[1] - n[0] + ncity) % ncity)) / 2
-        for j in range(1, int(nn) + 1):  # (j = 1; j <= nn; j++):
-            k = 1 + ((n[0] + j - 2) % ncity)
-            l = 1 + ((n[1] - j + ncity) % ncity)
+
+        for j in range(int(nn)):  # (j = 1; j <= nn; j++):
+            # Start at the ends of the segment and swap pairs of cities, moving toward the center.
+            k = (n[0] + j) % ncity
+            l = (n[1] - j) % ncity
+
             itmp = iorder[k]
             iorder[k] = iorder[l]
             iorder[l] = itmp
@@ -273,12 +266,12 @@ class Travel:
         xx = np.zeros(6)
         yy = np.zeros(6)
 
-        n[3] = 1 + (n[2] % ncity)  # City following n[3]
-        n[4] = 1 + ((n[0] + ncity - 2) % ncity)  # City preceding n[1]
-        n[5] = 1 + (n[1] % ncity)  # City following n[2]
+        n[3] = (n[2] + 1) % ncity  # City following n[2]
+        n[4] = (n[0] - 1) % ncity  # City preceding n[0]
+        n[5] = (n[1] + 1) % ncity  # City following n[1]
 
         #  Extract co-ordinates for the six cities involved
-        for j in range(0, 6):  # (j = 1; j <= 6; j++):
+        for j in range(6):  # (j = 1; j <= 6; j++):
             ii = iorder[n[j]]
             xx[j] = x[ii]
             yy[j] = y[ii]
@@ -303,30 +296,30 @@ class Travel:
                   ncity,  # Number of cities
                   n  # Path indices from transport_cost() above
                   ):
-        jorder = np.zeros(ncity + 1, dtype=np.int32)
+        jorder = np.zeros(ncity, dtype=np.int32)
 
-        m1 = 1 + ((n[1] - n[0] + ncity) % ncity)  # Cities from n[1] to n[2]
-        m2 = 1 + ((n[4] - n[3] + ncity) % ncity)  # Cities from n[4] to n[5]
-        m3 = 1 + ((n[2] - n[5] + ncity) % ncity)  # Cities from n[6] to n[3]
+        m1 = 1 + ((n[1] - n[0] + ncity) % ncity)  # Number of Cities from n[0] to n[1]
+        m2 = 1 + ((n[4] - n[3] + ncity) % ncity)  # Number of Cities from n[3] to n[4]
+        m3 = 1 + ((n[2] - n[5] + ncity) % ncity)  # Number of Cities from n[5] to n[2]
 
-        nn = 1
+        nn = 0
         #  Copy the chosen segment
-        for j in range(1, m1 + 1):  # (j = 1; j <= m1; j++):
-            jj = 1 + ((j + n[0] - 2) % ncity)
+        for j in range(m1):  # (j = 1; j <= m1; j++):
+            jj = (n[0] + j) % ncity
             jorder[nn] = iorder[jj]
             nn += 1
         if m2 > 0:
             #  Copy the segment from n[4] to n[5]
-            for j in range(1, m2 + 1):  # (j = 1; j <= m2; j++):
-                jj = 1 + ((j + n[3] - 2) % ncity)
+            for j in range(m2):  # (j = 1; j <= m2; j++):
+                jj = (n[3] + j) % ncity
                 ind = iorder[jj]
                 jorder[nn] = ind
                 nn += 1
 
         if m3 > 0:
             # Copy the segment from n[6] to n[3]
-            for j in range(1, m3 + 1):  # (j = 1; j <= m3; j++):
-                jj = 1 + ((j + n[5] - 2) % ncity)
+            for j in range(m3):  # (j = 1; j <= m3; j++):
+                jj = (n[5] + j) % ncity
                 jorder[nn] = iorder[jj]
                 nn += 1
         return jorder
@@ -352,13 +345,13 @@ class Travel:
         self.showmoves = tracing
 
         """ Calculate length of initial path """
-        for i in range(1, self.ncity):  # (i = 1; i < ncity; i++):
+        for i in range(self.ncity - 1):  # (i = 1; i < ncity; i++):
             i1 = self.iorder[i]
             i2 = self.iorder[i + 1]
             self.path += Travel.alen(self.x[i1], self.x[i2], self.y[i1], self.y[i2])
 
-        i1 = self.iorder[self.ncity]
-        i2 = self.iorder[1]
+        i1 = self.iorder[self.ncity - 1]
+        i2 = self.iorder[0]
         self.path += Travel.alen(self.x[i1], self.x[i2], self.y[i1], self.y[i2])
 
         # Calculate length of initial path, wrapping circularly
