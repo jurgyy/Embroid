@@ -222,7 +222,7 @@ class Travel:
     showmoves = False  # Show moves ?
     tracing = False  # Trace solution ?
 
-    def __init__(self, ncity):
+    def __init__(self, ncity=0, init_t=0.5, tfactr=0.9):
         self.ncity = ncity
         self.x = np.zeros(self.ncity)  # Array of X co-ordinates
         self.y = np.zeros(self.ncity)  # Array of Y co-ordinates
@@ -232,7 +232,7 @@ class Travel:
         # -----------
 
         self.nsucc = 0
-        self.tfactr = 0.9  # Annealing schedule -- T reduced by this factor on each step.
+        self.tfactr = tfactr  # Annealing schedule -- T reduced by this factor on each step.
 
         if Travel.tracing:
             print("Solving by simulated annealing: " + str(self.ncity) + " cities.")
@@ -244,7 +244,8 @@ class Travel:
         self.nlimit = 10 * self.ncity
 
         # Initial temperature
-        self.t = 0.5
+        self.init_t = init_t
+        self.t = init_t
 
         # Calculate length of initial path, wrapping circularly
         self.path = 0  # float("inf")
