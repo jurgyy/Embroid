@@ -223,13 +223,16 @@ class Travel:
     tracing = False  # Trace solution ?
 
     def __init__(self, ncity=0, init_t=0.5, tfactr=0.9):
-        self.ncity = ncity
+        self.ncity = 0
         self.x = np.zeros(self.ncity)  # Array of X co-ordinates
         self.y = np.zeros(self.ncity)  # Array of Y co-ordinates
         self.iorder = np.zeros(self.ncity, dtype=np.int32)  # Order of traversal
         self.distance_matrix = np.zeros((self.ncity, self.ncity))
 
         # -----------
+
+        for i in range(ncity):
+            self.add_city(rand_float(), rand_float())
 
         self.nsucc = 0
         self.tfactr = tfactr  # Annealing schedule -- T reduced by this factor on each step.
@@ -247,22 +250,45 @@ class Travel:
         self.init_t = init_t
         self.t = init_t
 
-        # Calculate length of initial path, wrapping circularly
-        self.path = 0  # float("inf")
+        self.path = 0
 
         self.n = np.zeros(6, dtype=np.int32)
 
-    def place_cities(self):
-        """ Randomly position cities on the map and set initial order """
-        for i in range(self.ncity):
-            self.x[i] = rand_float()
-            self.y[i] = rand_float()
-            self.iorder[i] = i
+    def reinit(self):
+        self.distance_matrix = np.zeros((self.ncity, self.ncity))
+        self.path = 0
+        self.t = self.init_t
+        self.n = np.zeros(6, dtype=np.int32)
+        self.nover = 100 * self.ncity
+        self.nlimit = 10 * self.ncity
+
+    def add_city(self, x: float, y: float):
+        """
+        Add a city on a given position, increase the total ncity by one and give the new city an initial position in the
+        path.
+
+        :param x: x coordinate
+        :param y: y coordinate
+        """
+        self.x = np.append(self.x, x)
+        self.y = np.append(self.y, y)
+        self.iorder = np.append(self.iorder, self.ncity)
+        self.ncity += 1
 
     def solve(self):
         """ Perform solution in one whack """
+        # Add dummy city
+        self.add_city(0., 0.)
+        self.reinit()
+
         coords = np.array([self.x, self.y]).T
+        # Calculate distance matrix
         self.distance_matrix = np.linalg.norm(coords[:, None, :] - coords[None, :, :], axis=-1)
+
+        # Set distance from and to dummy city to zero such that the start and end point of the solution doesn't have to
+        # be close to each other.
+        self.distance_matrix[-1] = 0
+        self.distance_matrix[:, -1] = 0
 
         self.iorder = self.solve_tsp()
 
@@ -289,12 +315,19 @@ class Travel:
 
         lx = []
         ly = []
-        for ind in self.iorder:
+
+        cut_ind = np.argwhere(self.iorder == self.ncity - 1).ravel()[0]
+        remain = np.roll(self.iorder, -cut_ind)[1:]
+
+        for ind in remain:
             lx.append(self.x[ind])
             ly.append(self.y[ind])
 
-        plt.scatter(self.x, self.y)
-        plt.plot(lx, ly)
+        plt.plot(lx, ly, zorder=0)
+
+        plt.scatter([lx[0], lx[-1]], [ly[0], ly[-1]], c="red", zorder=1)
+        plt.scatter(lx[1:-1], ly[1:-1], zorder=1)
+
         plt.show()
 
     @staticmethod
@@ -384,15 +417,15 @@ class Travel:
 def main():
     set_numba_seed(0)
 
-    cities = 1000
+    cities = 10
     t = Travel(cities)
+    # for i in range(cities):
+    #     t.add_city(rand_float(), rand_float())
 
-    # t.newProblem(cities)
-    t.place_cities()
     if True:
         t.solve()
 
-    # t.show_path()
+    t.show_path()
 
 
 if __name__ == '__main__':
