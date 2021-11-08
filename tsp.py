@@ -218,6 +218,26 @@ def reverse(iorder, ncity: int, n):
     return iorder
 
 
+@nb.jit(nb.float64[:, :](nb.float64[:, :]), parallel=True, nopython=True)
+def point_distance(coords: np.ndarray):
+    """
+    Calculate point-wise euclidean distance between each point.
+
+    :param coords: numpy array of n m-dimensional coordinates
+    :return: diagonally symetrical n x n array with the euclidean distance
+    """
+    result = np.zeros((len(coords), len(coords)))
+    for i in nb.prange(len(coords)):
+        ai = coords[i]
+        # Diagonal (where i == j) can be skipped since it's always zero
+        for j in range(i + 1, len(coords)):
+            aj = coords[j]
+            d = np.sqrt(np.sum((ai - aj)**2))
+            # Only calculate one half since it's diagonally symetrical
+            result[i, j] = result[j, i] = d
+    return result
+
+
 class Travel:
     showmoves = False  # Show moves ?
     tracing = False  # Trace solution ?
@@ -283,7 +303,7 @@ class Travel:
 
         coords = np.array([self.x, self.y]).T
         # Calculate distance matrix
-        self.distance_matrix = np.linalg.norm(coords[:, None, :] - coords[None, :, :], axis=-1)
+        self.distance_matrix = point_distance(coords)
 
         # Set distance from and to dummy city to zero such that the start and end point of the solution doesn't have to
         # be close to each other.
