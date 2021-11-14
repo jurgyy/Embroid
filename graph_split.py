@@ -7,8 +7,6 @@ from sklearn.cluster import SpectralClustering
 
 from tsp import point_distance
 
-np.set_printoptions(precision=3, edgeitems=30, linewidth=100000)
-
 
 @nb.njit
 def get_graph_components(adj_mat: np.ndarray) -> List[List[int]]:
@@ -150,51 +148,52 @@ def _demonstrate():
             print(f"{size:>5d}   {count:>5d} {bar}")
         print()
 
-    np.random.seed(6)
+    with np.printoptions(precision=3, edgeitems=30, linewidth=100000):
+        np.random.seed(6)
 
-    # n, r, max_cluster_size = 30, 0.15, 4
-    n, r, max_cluster_size = 500, 0.05, 10
-    # n, r, max_cluster_size = 10000, 0.009, 25
+        # n, r, max_cluster_size = 30, 0.15, 4
+        n, r, max_cluster_size = 500, 0.05, 10
+        # n, r, max_cluster_size = 10000, 0.009, 25
 
-    coords = np.random.random((n, 2))
-    annotate = False
+        coords = np.random.random((n, 2))
+        annotate = False
 
-    dis_matrix = point_distance(coords)
-    if n <= 30:
-        print("Distance Matrix:")
-        print(dis_matrix)
+        dis_matrix = point_distance(coords)
+        if n <= 30:
+            print("Distance Matrix:")
+            print(dis_matrix)
+            print()
+
+        adj_matrix = dis_matrix < r
+        np.fill_diagonal(adj_matrix, False)
+        if n <= 30:
+            print(f"Adjacency matrix with max_radius of {r}:")
+            print(adj_matrix)
+            print()
+
+        components = get_graph_components(adj_matrix)
+        print("Graph components:")
+        print(components)
+        print_component_dist(components)
         print()
 
-    adj_matrix = dis_matrix < r
-    np.fill_diagonal(adj_matrix, False)
-    if n <= 30:
-        print(f"Adjacency matrix with max_radius of {r}:")
-        print(adj_matrix)
+        print(f"Splitting components with size >{max_cluster_size}...")
+        split_components = []
+        for component in components:
+            split_components += split_component(component, adj_matrix, max_cluster_size)
         print()
+        print("Components after splitting:")
+        print(split_components)
+        print_component_dist(split_components)
 
-    components = get_graph_components(adj_matrix)
-    print("Graph components:")
-    print(components)
-    print_component_dist(components)
-    print()
-
-    print(f"Splitting components with size >{max_cluster_size}...")
-    split_components = []
-    for component in components:
-        split_components += split_component(component, adj_matrix, max_cluster_size)
-    print()
-    print("Components after splitting:")
-    print(split_components)
-    print_component_dist(split_components)
-
-    print("plotting")
-    fig, axes = plt.subplots(1, 2)
-    fig.suptitle(f"Clustering, (n, r, m) = ({n}, {r}, {max_cluster_size})", fontsize=16)
-    axes[0].set_title(f"Before splitting, n_clusters: {len(components)}")
-    axes[1].set_title(f"After splitting, n_clusters: {len(split_components)}")
-    _plot_graph_components(axes[0], components, coords, adj_matrix, annotate=annotate)
-    _plot_graph_components(axes[1], split_components, coords, adj_matrix, annotate=annotate)
-    plt.show()
+        print("plotting")
+        fig, axes = plt.subplots(1, 2)
+        fig.suptitle(f"Clustering, (n, r, m) = ({n}, {r}, {max_cluster_size})", fontsize=16)
+        axes[0].set_title(f"Before splitting, n_clusters: {len(components)}")
+        axes[1].set_title(f"After splitting, n_clusters: {len(split_components)}")
+        _plot_graph_components(axes[0], components, coords, adj_matrix, annotate=annotate)
+        _plot_graph_components(axes[1], split_components, coords, adj_matrix, annotate=annotate)
+        plt.show()
 
 
 if __name__ == '__main__':
