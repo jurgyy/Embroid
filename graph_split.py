@@ -49,7 +49,7 @@ def breath_first_traversal(adj_mat: np.ndarray, root: int) -> Generator[int, Non
         w = queue.pop(0)
         yield w
 
-        for x, b in enumerate(adj_mat[w]):  # self.vertices[w].edges.keys():
+        for x, b in enumerate(adj_mat[w]):
             if not b:
                 continue
             if x not in visited:
