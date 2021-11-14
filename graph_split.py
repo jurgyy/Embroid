@@ -1,44 +1,32 @@
-import random
-import timeit
-from collections import Counter, OrderedDict
-from typing import Generator, List, Dict, Set
+from collections import Counter
+from typing import Generator, List, Optional
 
 import numpy as np
 import numba as nb
 
-import matplotlib.pyplot as plt
+from sklearn.cluster import SpectralClustering
+
+from tsp import point_distance
 
 np.set_printoptions(precision=3, edgeitems=30, linewidth=100000)
 
 
-@nb.jit(nb.float64[:, :](nb.float64[:, :]), parallel=True, nopython=True)
-def point_distance(coords: np.ndarray):
+@nb.njit
+def get_graph_components(adj_mat: np.ndarray) -> List[List[int]]:
     """
-    Calculate point-wise euclidean distance between each point.
+    Calculate all graph components from a given adjacency matrix. Graph components are the individual unconnected
+    graphs. Return a list of integer lists where the integers represent the indices of the nodes in the adjaceny matrix.
 
-    :param coords: numpy array of n m-dimensional coordinates
-    :return: diagonally symetrical n x n array with the euclidean distance
+    :param adj_mat: Boolean adjacency matrix with where adj_mat[i][j] == True means node i is connected with node j
+    :return: List of lists of indices where [[i, j], [z]] means that nodes i and j form a graph and z is unconnected
     """
-    result = np.zeros((len(coords), len(coords)))
-    for i in nb.prange(len(coords)):
-        ai = coords[i]
-        # Diagonal (where i == j) can be skipped since it's always zero
-        for j in range(i + 1, len(coords)):
-            aj = coords[j]
-            d = np.sqrt(np.sum((ai - aj) ** 2))
-            # Only calculate one half since it's diagonally symetrical
-            result[i, j] = result[j, i] = d
-    return result
-
-
-def find_graph_components(connection_matrix: np.ndarray) -> List[List[int]]:
-    unvisited = set(range(len(connection_matrix)))
+    unvisited = set(range(len(adj_mat)))
     components = []
 
     while unvisited:
         component = []
         root = unvisited.pop()
-        for v in breath_first_traversal(connection_matrix, root):
+        for v in breath_first_traversal(adj_mat, root):
             unvisited.discard(v)
             component.append(v)
 
@@ -47,14 +35,22 @@ def find_graph_components(connection_matrix: np.ndarray) -> List[List[int]]:
     return components
 
 
-def breath_first_traversal(connection_matrix: np.ndarray, root: int) -> Generator[int, None, None]:
+@nb.njit
+def breath_first_traversal(adj_mat: np.ndarray, root: int) -> Generator[int, None, None]:
+    """
+    Breath first traversal through an adjacency matrix. Yields the indices of each node in the graph starting with
+    the root. Does not guarantee to visit each node in the case of unconnected graph components.
+
+    :param adj_mat: Boolean adjacency matrix with where adj_mat[i][j] == True means node i is connected with node j
+    :param root: Index in the adjacency matrix of the starting node
+    """
     queue = [root]
     visited = {root}
     while queue:
         w = queue.pop(0)
         yield w
 
-        for x, b in enumerate(connection_matrix[w]):  # self.vertices[w].edges.keys():
+        for x, b in enumerate(adj_mat[w]):  # self.vertices[w].edges.keys():
             if not b:
                 continue
             if x not in visited:
@@ -62,280 +58,143 @@ def breath_first_traversal(connection_matrix: np.ndarray, root: int) -> Generato
                 queue.append(x)
 
 
-def get_components_distance_matrices(components: List[List[int]], full_distance_matrix: np.ndarray)\
-        -> List[np.ndarray]:
-    return [full_distance_matrix[np.ix_(c, c)] for c in components]
+def get_component_adjacency_matrix(component: List[int], adj_mat: np.ndarray) -> np.ndarray:
+    """
+    Select the adjacency submatrix of a given graph component.
+
+    :param component: Indices of the submatrix
+    :param adj_mat: Boolean adjacency matrix with where adj_mat[i][j] == True means node i is connected with node j
+    :return: The adjacency submatrix of the component
+    """
+    return adj_mat[np.ix_(component, component)]
 
 
-def get_components_connection_matrices(components: List[List[int]], connection_matrix: np.ndarray)\
-        -> List[np.ndarray]:
-    return [get_component_connection_matrix(c, connection_matrix) for c in components]
+def spectral_clustering(adj_mat: np.ndarray, n_clusters: int, random_state: Optional[int] = None) -> List[int]:
+    """
+    Using Spectral Clustering with discretization labeling strategy, find n_cluster clusters in the adjacency matrix.
+
+    :param adj_mat: Boolean adjacency matrix with where adj_mat[i][j] == True means node i is connected with node j
+    :param n_clusters: Number of clusters to find
+    :param random_state: Optional seed for the clustering algorithm
+    :return: List of len(adj_mat) integers consisting of [0..n_clusters) where all indices with a given value should be
+    grouped together to form n_clusters subgraphs.
+    """
+    sc = SpectralClustering(n_clusters, affinity="precomputed", assign_labels="discretize", random_state=random_state)
+    sc.fit(adj_mat)
+    return sc.labels_
 
 
-def get_component_connection_matrix(component: List[int], connection_matrix: np.ndarray):
-    return connection_matrix[np.ix_(component, component)]
+@nb.njit
+def n_cluster_fits(cluster_size: int, max_cluster_size: int) -> int:
+    """
+    Calculate the number of times a cluster with size cluster_size should be split up using upside-down floor division.
+
+    :param cluster_size: Size of the cluster
+    :param max_cluster_size: Maximum size a cluster should be
+    :return: The number of times the cluster should be split.
+    """
+    return -(cluster_size // -max_cluster_size)
 
 
-def plot_connection_matrix(m, n=0, idxs=None):
-    c = [(0., 0., 0.), (0., 0., 0.1), (0., 0., 0.2), (0., 0., 0.3), (0., 0., 0.4), (0., 0., 0.5), (0., 0., 0.6),
-         (0., 0., 0.7), (0., 0., 0.8), (0., 0., 0.9), (0., 0., 1.), (0., 0.1, 1.), (0., 0.2, 1.), (0., 0.3, 1.),
-         (0., 0.4, 1.), (0., 0.5, 1.), (0., 0.6, 1.), (0., 0.7, 1.), (0., 0.8, 1.), (0., 0.9, 1.), (0., 1., 1.),
-         (0.1, 1., 1.), (0.2, 1., 1.), (0.3, 1., 1.), (0.4, 1., 1.), (0.5, 1., 1.), (0.7, 1., 1.), (0.8, 1., 1.),
-         (0.9, 1., 1.), (1., 1., 1.)]
+def split_component(component: List[int], adj_mat: np.ndarray, max_cluster_size: int,
+                    random_state: Optional[int] = None) -> List[List[int]]:
+    """
+    Split a graph component into one or more components
 
-    if n == 0:
-        n = m.shape[0]
+    :param component: The component to be split up
+    :param adj_mat: Boolean adjacency matrix with where adj_mat[i][j] == True means node i is connected with node j
+    :param max_cluster_size: Maximum size a component should be
+    :param random_state: Optional seed for the clustering algorithm
+    :return: Possible solution of splitting the given component up as a list of (sub)components.
+    """
+    n_clusters = n_cluster_fits(len(component), max_cluster_size)
 
-    d = np.arange(0, 2 * np.pi, 2 * np.pi / n)
-    coords = np.array([np.cos(d), np.sin(d)])
-
-    fig, ax = plt.subplots()
-    ax.scatter(coords[0], coords[1])
-    for i, row in zip(range(m.shape[0]), m):
-        if idxs:
-            t = idxs[i]
-            xi = coords[0][t]
-            yi = coords[1][t]
-        else:
-            t = i
-            xi = coords[0][t]
-            yi = coords[1][t]
-        ax.annotate(t, (xi, yi))
-        for j in range(i + 1, len(row)):
-            if row[j] > 0:
-                if idxs:
-                    xj = coords[0][idxs[j]]
-                    yj = coords[1][idxs[j]]
-                else:
-                    xj = coords[0][j]
-                    yj = coords[1][j]
-                ax.annotate(row[j], ((xi * 3 + xj) / 4, (yi * 3 + yj) / 4))
-                ax.plot([xi, xj], [yi, yj], c=c[row[j]])
-    return fig, ax
+    if n_clusters > 1:
+        adj_mat = get_component_adjacency_matrix(component, adj_mat)
+        labels = spectral_clustering(adj_mat, n_clusters, random_state=random_state)
+        return [[component[i] for i in range(len(labels)) if labels[i] == l] for l in set(labels)]
+    else:
+        return [component]
 
 
-def karger(connections: np.ndarray, iterations=0):
-    best_score = float("inf")
-    best_clusters = None
+def _plot_graph_components(ax, components, coords, adj_mat, annotate=False):
+    if annotate:
+        for i in range(coords.shape[0]):
+            ax.annotate(str(i), coords[i])
 
-    if iterations == 0:
-        iterations = connections.shape[0] ** 2
-
-    for i in range(iterations):
-        score, clusters = karger_iteration(connections.copy())
-        if score < best_score:
-            best_score = score
-            best_clusters = clusters
-    return best_score, [list(c) for c in best_clusters]
-
-
-def ratio_cut(solution, idxs, clusters):
-    cut = solution[0][1]
-    v1 = len(clusters[idxs[0]])
-    v2 = len(clusters[idxs[1]])
-    return cut / v1 + cut / v2
-
-
-def karger_iteration(connections, plot=False):
-    # The indexes map between the node and the connections matrix
-    idxs = list(range(connections.shape[0]))
-    # Initialize clusters as single nodes
-    clusters = {i: {i} for i in range(connections.shape[0])}
-    n = len(idxs)
-
-    while connections.shape[0] > 2:
-        # Randomly select a node
-        a = np.random.randint(0, connections.shape[0])
-
-        # Randomly select a connected node
-        idx = np.arange(connections.shape[0])
-        b = np.random.choice(idx[(connections[a] > 0) & (idx != a)])
-
-        # Update the connections matrix by adding all connections of node b to node a
-        connections[a] += connections[b]
-        connections[:, a] += connections[:, b]
-
-        # Remove node b from the matrix
-        remain = [i for i in range(len(idx)) if i != b]
-        connections = connections[np.ix_(remain, remain)]
-
-        # Combine the clusters of node a and b
-        clusters[idxs[a]] = clusters[idxs[a]].union(clusters[idxs[b]])
-        # Delete cluster and index of node b
-        del clusters[idxs[b]]
-        del idxs[b]
-
-        if plot:
-            print(a, b, idxs, clusters)
-            plot_connection_matrix(connections, n=n, idxs=idxs)
-
-    score = ratio_cut(connections, idxs, clusters)
-    return score, list(clusters.values())
-
-
-def generate_connection_matrix(s):
-    connections = (np.random.random(s ** 2) > 0.9).reshape((s, s)).astype(np.int32)
-    connections = np.triu(connections, k=1)
-    np.fill_diagonal(connections, 0)
-    for i, row in enumerate(connections[:-1]):
-        connections[i][i + 1] = 1
-        if sum(row) == 1:
-            r = np.random.randint(i + 1, len(row))
-            print(">>", i, r)
-            connections[i][r] = 1
-    connections = connections + connections.T
-    return connections
-
-
-def generate_two_cluster_connection_matrix():
-    # Cluster with two obvious clusters: [{0, 1, 2, 3, 4, 8, 14}, {5, 6, 7, 9, 10, 11, 12, 13}]
-    #    0  1  2  3  4  5  6  7  8  9  10 11 12 13 14
-    connections = np.array([
-        [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # 0
-        [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # 1
-        [0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],  # 2
-        [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # 3
-        [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],  # 4
-        [0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0],  # 5
-        [0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0],  # 6
-        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0],  # 7
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # 8
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0],  # 9
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0],  # 10
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],  # 11
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],  # 12
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],  # 13
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # 14
-    ])
-    connections = connections + connections.T
-    return connections
-
-
-def main2():
-    np.random.seed(6)
-
-    # connections = generate_connection_matrix(20)
-    connections = generate_two_cluster_connection_matrix()
-
-    print(connections)
-    print()
-    # plot_connection_matrix(connections)
-
-    best_score, best_clusters = karger(connections)
-    print("result:")
-    print(f"Score {best_score}")
-    print("Clusters:")
-    print(best_clusters)
-
-    plot_connection_matrix(connections)
-    plt.show()
-
-    return
-
-
-def main():
-    # 1000, 0.03
-    # 10, 0.09
-    n = 1000
-    r = 0.03
-    max_cluster_size = 25
-
-    coords = np.random.random((n, 2))
-    verbose = True
-    # print(coords)
-
-    dis_matrix = point_distance(coords)
-    # print(dis_matrix)
-    connections = dis_matrix < r
-    np.fill_diagonal(connections, False)
-    connections = connections.astype(np.int32)
-
-    components = find_graph_components(connections)
-    print("Components:")
-    print(components)
-
-    if verbose:
-        c = Counter(map(len, components))
-        for size, count in sorted(c.items(), key=lambda item: item[0]):
-            bar = "#" * count
-            print(f"Size: {size:>4d} {bar}")
-        print()
-
-    # dmxs = get_components_distance_matrices(components, dis_matrix)
-    # if verbose:
-    #     for i, dmx in enumerate(dmxs):
-    #         print(i + 1)
-    #         print(dmx)
-    #         print()
-
-    # cmxs = get_components_connection_matrices(components, connections)
-    # if verbose:
-    #     for i, cmx in enumerate(cmxs):
-    #         print(i + 1)
-    #         print(cmx)
-    #         print()
-    # plot_graph(connections, coords, dis_matrix)
-
-    def split_large_components(c):
-        components = []
-        if len(c) > max_cluster_size:
-            con_matrix = get_component_connection_matrix(c, connections)
-
-            idx_map = {i: c[i] for i in range(len(c))}
-            _, clusters = karger(con_matrix)
-            clusters = [list(map(idx_map.__getitem__, c)) for c in clusters]
-            for cluster in clusters:
-                if len(cluster) > max_cluster_size:
-                    components += split_large_components(cluster)
-                else:
-                    components.append(cluster)
-        else:
-            return [c]
-        return components
-
-    print("splitting graph")
-    new_components = []
     for component in components:
-        new_components += split_large_components(component)
+        color = (np.random.random(3) * 0.8).tolist()
+        ax.scatter(coords[component, 0], coords[component, 1], color=color)
 
-    print(components)
-    print(new_components)
-    print("plotting")
-    # plot_components(new_components, coords, connections)
-    # plt.show()
-    # karger(cmxs[0], components[0])
-
-    # return
-
-
-def plot_components(components, coords, connections):
-    fig, ax = plt.subplots()
-    ax.scatter(coords[:, 0], coords[:, 1])
-    for component in components:
         if len(component) == 1:
             continue
-        color = np.random.random(3) * 0.8
+
         for i, idx1 in enumerate(component):
-            ax.annotate(str(idx1), coords[idx1], c=color)
             for idx2 in component[i+1:]:
-                if connections[idx1, idx2]:
+                if adj_mat[idx1, idx2]:
                     ax.plot([coords[idx1][0], coords[idx2][0]], [coords[idx1][1], coords[idx2][1]],
-                            c=color)
-    return fig, ax
+                            c=color, zorder=-1)
+    return ax
 
 
-def plot_graph(connections, coords, dis_matrix):
-    fig, ax = plt.subplots()
-    ax.scatter(coords[:, 0], coords[:, 1])
-    for i in range(len(dis_matrix)):
-        # c = plt.Circle(coords[i], r, color=(0.9, 0.9, 0.9), fill=False)
-        ax.annotate(str(i), coords[i])
-        # ax.add_patch(c)
-        for j in range(i + 1, len(dis_matrix)):
-            if connections[i][j]:
-                ax.plot([coords[i][0], coords[j][0]], [coords[i][1], coords[j][1]], c="gray")
-    return fig, ax
+def _demonstrate():
+    import matplotlib.pyplot as plt
+
+    def print_component_dist(components):
+        c = Counter(map(len, components))
+        print("Comp.")
+        print(" size   Freq.")
+        for size, count in sorted(c.items(), key=lambda item: item[0]):
+            bar = "#" * count
+            print(f"{size:>5d}   {count:>5d} {bar}")
+        print()
+
+    np.random.seed(6)
+
+    # n, r, max_cluster_size = 30, 0.15, 4
+    n, r, max_cluster_size = 500, 0.05, 10
+    # n, r, max_cluster_size = 10000, 0.009, 25
+
+    coords = np.random.random((n, 2))
+    annotate = False
+
+    dis_matrix = point_distance(coords)
+    if n <= 30:
+        print("Distance Matrix:")
+        print(dis_matrix)
+        print()
+
+    adj_matrix = dis_matrix < r
+    np.fill_diagonal(adj_matrix, False)
+    if n <= 30:
+        print(f"Adjacency matrix with max_radius of {r}:")
+        print(adj_matrix)
+        print()
+
+    components = get_graph_components(adj_matrix)
+    print("Graph components:")
+    print(components)
+    print_component_dist(components)
+    print()
+
+    print(f"Splitting components with size >{max_cluster_size}...")
+    split_components = []
+    for component in components:
+        split_components += split_component(component, adj_matrix, max_cluster_size)
+    print()
+    print("Components after splitting:")
+    print(split_components)
+    print_component_dist(split_components)
+
+    print("plotting")
+    fig, axes = plt.subplots(1, 2)
+    fig.suptitle(f"Clustering, (n, r, m) = ({n}, {r}, {max_cluster_size})", fontsize=16)
+    axes[0].set_title(f"Before splitting, n_clusters: {len(components)}")
+    axes[1].set_title(f"After splitting, n_clusters: {len(split_components)}")
+    _plot_graph_components(axes[0], components, coords, adj_matrix, annotate=annotate)
+    _plot_graph_components(axes[1], split_components, coords, adj_matrix, annotate=annotate)
+    plt.show()
 
 
 if __name__ == '__main__':
-    main()
+    _demonstrate()
