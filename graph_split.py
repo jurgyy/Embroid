@@ -1,4 +1,3 @@
-from collections import Counter
 from typing import Generator, List, Optional
 
 import numpy as np
@@ -139,7 +138,9 @@ def _plot_graph_components(ax, components, coords, adj_mat, annotate=False):
 
 def _demonstrate():
     import matplotlib.pyplot as plt
+    from collections import Counter
 
+    # noinspection PyShadowingNames
     def print_component_dist(components):
         c = Counter(map(len, components))
         print("Comp.")
