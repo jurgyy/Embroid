@@ -163,11 +163,21 @@ def _plot_graph_components(ax, components, coords, adj_mat, annotate=False):
         if len(component) == 1:
             continue
 
+        lines_x = []
+        lines_y = []
         for i, idx1 in enumerate(component):
             for idx2 in component[i+1:]:
                 if adj_mat[idx1, idx2]:
-                    ax.plot([coords[idx1][0], coords[idx2][0]], [coords[idx1][1], coords[idx2][1]],
-                            c=color, zorder=-1)
+                    lines_x.append(coords[idx1][0])
+                    lines_x.append(coords[idx2][0])
+                    lines_y.append(coords[idx1][1])
+                    lines_y.append(coords[idx2][1])
+                else:
+                    lines_x.append(None)
+                    lines_y.append(None)
+            lines_x.append(None)
+            lines_y.append(None)
+        ax.plot(lines_x, lines_y, c=color, zorder=-1)
     return ax
 
 
