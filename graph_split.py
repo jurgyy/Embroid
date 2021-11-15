@@ -55,6 +55,25 @@ def breath_first_traversal(adj_mat: np.ndarray, root: int) -> Generator[int, Non
                 queue.append(x)
 
 
+@nb.njit
+def get_adjacency_matrix(dis_mat: np.ndarray, node_range: float, diag: Optional[bool] = None) -> np.ndarray:
+    """
+    Convert a distance matrix and a max range into an adjacency matrix.
+
+    :param dis_mat: Distance matrix
+    :param node_range: Node range. Will true if dis_mat[i][j] < node_range
+    :param diag: If False the diagnonal, i.e. node connections to itself, will be set to False. If None the value is
+        decided purely based on the distance matrix
+    :return: Boolean adjacency matrix with where adj_mat[i][j] == True means node i is connected with node j
+    """
+    adj_matrix = dis_mat < node_range
+
+    if diag is not None:
+        np.fill_diagonal(adj_matrix, diag)
+
+    return adj_matrix
+
+
 def get_component_adjacency_matrix(component: List[int], adj_mat: np.ndarray) -> np.ndarray:
     """
     Select the adjacency submatrix of a given graph component.
@@ -96,7 +115,7 @@ def n_cluster_fits(cluster_size: int, max_cluster_size: int) -> int:
 def split_component(component: List[int], adj_mat: np.ndarray, max_cluster_size: int,
                     random_state: Optional[int] = None) -> List[List[int]]:
     """
-    Split a graph component into one or more components
+    Split a graph component into one or more components.
 
     :param component: The component to be split up
     :param adj_mat: Boolean adjacency matrix with where adj_mat[i][j] == True means node i is connected with node j
@@ -112,6 +131,24 @@ def split_component(component: List[int], adj_mat: np.ndarray, max_cluster_size:
         return [[component[i] for i in range(len(labels)) if labels[i] == l] for l in set(labels)]
     else:
         return [component]
+
+
+def split_components(components: List[List[int]], adj_mat: np.ndarray, max_cluster_size: int,
+                     random_state: Optional[int] = None) -> List[List[int]]:
+    """
+    Split a list of graph components each into one or more components.
+
+    :param components: List of the components to be split up
+    :param adj_mat: Boolean adjacency matrix with where adj_mat[i][j] == True means node i is connected with node j
+    :param max_cluster_size: Maximum size a component should be
+    :param random_state: Optional seed for the clustering algorithm
+    :return: List of split components if the component > max_cluster_size
+    """
+    split = []
+    for component in components:
+        split += split_component(component, adj_mat, max_cluster_size, random_state=random_state)
+
+    return split
 
 
 def _plot_graph_components(ax, components, coords, adj_mat, annotate=False):
@@ -164,8 +201,7 @@ def _demonstrate():
             print(dis_matrix)
             print()
 
-        adj_matrix = dis_matrix < r
-        np.fill_diagonal(adj_matrix, False)
+        adj_matrix = get_adjacency_matrix(dis_matrix, r, diag=False)
         if n <= 30:
             print(f"Adjacency matrix with max_radius of {r}:")
             print(adj_matrix)
@@ -178,21 +214,19 @@ def _demonstrate():
         print()
 
         print(f"Splitting components with size >{max_cluster_size}...")
-        split_components = []
-        for component in components:
-            split_components += split_component(component, adj_matrix, max_cluster_size)
+        components_split = split_components(components, adj_matrix, max_cluster_size)
         print()
         print("Components after splitting:")
-        print(split_components)
-        print_component_dist(split_components)
+        print(components_split)
+        print_component_dist(components_split)
 
         print("plotting")
         fig, axes = plt.subplots(1, 2)
         fig.suptitle(f"Clustering, (n, r, m) = ({n}, {r}, {max_cluster_size})", fontsize=16)
         axes[0].set_title(f"Before splitting, n_clusters: {len(components)}")
-        axes[1].set_title(f"After splitting, n_clusters: {len(split_components)}")
+        axes[1].set_title(f"After splitting, n_clusters: {len(components_split)}")
         _plot_graph_components(axes[0], components, coords, adj_matrix, annotate=annotate)
-        _plot_graph_components(axes[1], split_components, coords, adj_matrix, annotate=annotate)
+        _plot_graph_components(axes[1], components_split, coords, adj_matrix, annotate=annotate)
         plt.show()
 
 
