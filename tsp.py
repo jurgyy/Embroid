@@ -3,7 +3,7 @@
 """
 
 import math
-from numba import jit, float32, float64, int32, boolean
+from numba import jit, float64, int32, boolean
 import numba as nb
 
 import numpy as np
@@ -22,14 +22,27 @@ def set_numba_seed(seed: int):
     np.random.seed(seed)
 
 
-@jit(float32(), nopython=True)
+@jit(float64(), nopython=True)
 def rand_float() -> float:
     """
-    Using a static random float method so we can easily use numba's internal random state everywhere.
+    Return a random float between 0 and 1, including 0 excluding 1.
+    Use this function when you want to use numba's internal rng seed.
 
-    :return float: random float
+    :return float: random float 0 <= random < 1
     """
     return np.random.random()
+
+
+@jit(int32(int32), nopython=True)
+def rand_int(upper) -> float:
+    """
+    Return a random integer between 0 and upper, including 0 excluding upper.
+    Use this function when you want to use numba's internal rng seed.
+
+    :param upper: Upper bound
+    :return int: Random integer 0 <= random < upper
+    """
+    return np.random.randint(upper)
 
 
 @jit(int32(int32[:], int32), nopython=True)
@@ -46,8 +59,8 @@ def choose_start(n: np.ndarray, ncity: int) -> int:
     """
     while True:
         #  Randomly choose the start and end of the segment
-        n[0] = (int(ncity * rand_float()))
-        n[1] = (int((ncity - 1) * rand_float()))
+        n[0] = rand_int(ncity)
+        n[1] = rand_int(ncity - 1)
         if n[1] >= n[0]:
             n[1] = n[1] + 1
 
@@ -59,7 +72,7 @@ def choose_start(n: np.ndarray, ncity: int) -> int:
     return nn
 
 
-@jit(float32(float64[:, :], int32[:], int32, int32[:]), nopython=True)
+@jit(float64(float64[:, :], int32[:], int32, int32[:]), nopython=True)
 def transport_cost(distance_matrix, iorder, ncity, n):
     """
     Compute cost of transport along a given path.  Returns the cost and updates the path
@@ -95,7 +108,7 @@ def transport_cost(distance_matrix, iorder, ncity, n):
     return de
 
 
-@jit(float32(float64[:, :], int32[:], int32, int32[:]), nopython=True)
+@jit(float64(float64[:, :], int32[:], int32, int32[:]), nopython=True)
 def reversal_cost(distance_matrix, iorder, ncity, n):
     """
     Calculate cost function for a proposed path reversal.
@@ -119,7 +132,7 @@ def reversal_cost(distance_matrix, iorder, ncity, n):
     return de
 
 
-@jit(boolean(float32, float32), nopython=True)
+@jit(boolean(float64, float64), nopython=True)
 def metropolis(de, t) -> bool:
     """
     Metropolis algorithm.  Returns a Boolean value which tells whether to accept a reconfiguration which leads to
@@ -310,7 +323,12 @@ class Travel:
         self.distance_matrix[-1] = 0
         self.distance_matrix[:, -1] = 0
 
-        self.iorder = self.solve_tsp()
+        if self.ncity <= 3:
+            # Special case one or two cities (excluding the dummy city) since the regular needs at least three cities
+            # and the solution is trivial
+            self.iorder = np.arange(self.ncity, dtype=np.int32)
+        else:
+            self.iorder = self.solve_tsp()
 
     def show_path(self):
         """  Show the optimised path on the console log
@@ -361,10 +379,10 @@ class Travel:
 
     # noinspection PyTypeChecker
     @staticmethod
-    @jit(nb.types.Tuple((boolean, float32, int32[:]))
-             (int32[:], int32, int32, int32, float32, float64[:, :], float32, int32[:]))
+    @jit(nb.types.Tuple((boolean, float64, int32[:]))
+             (int32[:], int32, int32, int32, float64, float64[:, :], float64, int32[:]))
     def solve_step(n, ncity, nover, nlimit, t, distance_matrix, path, iorder):
-        """  Perform one step of annealing.  Returns true when a solution is found.  """
+        """  Perform one step of annealing. Returns True when a solution is found. """
         nsucc = 0
         for _ in range(nover):
             nn = choose_start(n, ncity)
@@ -439,11 +457,8 @@ def main():
 
     cities = 10
     t = Travel(cities)
-    # for i in range(cities):
-    #     t.add_city(rand_float(), rand_float())
 
-    if True:
-        t.solve()
+    t.solve()
 
     t.show_path()
 
