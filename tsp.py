@@ -10,6 +10,8 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
+from util import point_distance
+
 
 @jit(nopython=True)
 def set_numba_seed(seed: int):
@@ -229,26 +231,6 @@ def reverse(iorder, ncity: int, n):
         iorder[l] = itmp
 
     return iorder
-
-
-@nb.jit(nb.float64[:, :](nb.float64[:, :]), parallel=True, nopython=True)
-def point_distance(coords: np.ndarray):
-    """
-    Calculate point-wise euclidean distance between each point.
-
-    :param coords: numpy array of n m-dimensional coordinates
-    :return: diagonally symetrical n x n array with the euclidean distance
-    """
-    result = np.zeros((len(coords), len(coords)))
-    for i in nb.prange(len(coords)):
-        ai = coords[i]
-        # Diagonal (where i == j) can be skipped since it's always zero
-        for j in range(i + 1, len(coords)):
-            aj = coords[j]
-            d = np.sqrt(np.sum((ai - aj)**2))
-            # Only calculate one half since it's diagonally symetrical
-            result[i, j] = result[j, i] = d
-    return result
 
 
 class Travel:
