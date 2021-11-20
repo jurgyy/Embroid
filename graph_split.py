@@ -3,9 +3,12 @@ from typing import Generator, List, Optional
 import numpy as np
 import numba as nb
 
-from sklearn.cluster import SpectralClustering
+import matplotlib.pyplot as plt
+from matplotlib.collections import PatchCollection
 
-from tsp import point_distance
+from sklearn.cluster import SpectralClustering, KMeans
+
+from util import point_distance
 
 
 @nb.njit
@@ -74,15 +77,15 @@ def get_adjacency_matrix(dis_mat: np.ndarray, node_range: float, diag: Optional[
     return adj_matrix
 
 
-def get_component_adjacency_matrix(component: List[int], adj_mat: np.ndarray) -> np.ndarray:
+def select_matrix_component(matrix: np.ndarray, indices: List[int]) -> np.ndarray:
     """
-    Select the adjacency submatrix of a given graph component.
+    Select specific rows and columns of a given 2D matrix.
 
-    :param component: Indices of the submatrix
-    :param adj_mat: Boolean adjacency matrix with where adj_mat[i][j] == True means node i is connected with node j
-    :return: The adjacency submatrix of the component
+    :param matrix: 2D array
+    :param indices: Indices of the matrix
+    :return: |indices| x |indices| selection of the given matrix
     """
-    return adj_mat[np.ix_(component, component)]
+    return matrix[np.ix_(indices, indices)]
 
 
 def spectral_clustering(adj_mat: np.ndarray, n_clusters: int, random_state: Optional[int] = None) -> List[int]:
@@ -100,6 +103,23 @@ def spectral_clustering(adj_mat: np.ndarray, n_clusters: int, random_state: Opti
     return sc.labels_
 
 
+def kmeans(coords: np.ndarray, n_clusters: int, weights: np.ndarray, random_state: Optional[int] = None) -> List[int]:
+    """
+    Using KMeans Clustering compute n_clusters clusters of the given coordinates. This does not use the adjacency matrix
+    so this method does not guarantee that all clusters are connected graphs.
+
+    :param coords: array of coordinates which will be clustered
+    :param n_clusters: Number of clusters to compute
+    :param weights: Weight of each coordinate
+    :param random_state: Optional seed for the clustering algorithm
+    :return: List of len(coords) integers consiting of [0..n_clusters) where all indices with a given value should be
+    grouped together to form n_cluster clusters
+    """
+    clusterer = KMeans(n_clusters=n_clusters, random_state=random_state)
+    clusterer.fit(coords, sample_weight=weights)
+    return clusterer.labels_
+
+
 @nb.njit
 def n_cluster_fits(cluster_size: int, max_cluster_size: int) -> int:
     """
@@ -112,8 +132,8 @@ def n_cluster_fits(cluster_size: int, max_cluster_size: int) -> int:
     return -(cluster_size // -max_cluster_size)
 
 
-def split_component(component: List[int], adj_mat: np.ndarray, max_cluster_size: int,
-                    random_state: Optional[int] = None) -> List[List[int]]:
+def split_component_spectral_clustering(component: List[int], adj_mat: np.ndarray, max_cluster_size: int,
+                                        random_state: Optional[int] = None) -> List[List[int]]:
     """
     Split a graph component into one or more components.
 
@@ -126,15 +146,15 @@ def split_component(component: List[int], adj_mat: np.ndarray, max_cluster_size:
     n_clusters = n_cluster_fits(len(component), max_cluster_size)
 
     if n_clusters > 1:
-        adj_mat = get_component_adjacency_matrix(component, adj_mat)
+        adj_mat = select_matrix_component(adj_mat, component)
         labels = spectral_clustering(adj_mat, n_clusters, random_state=random_state)
         return [[component[i] for i in range(len(labels)) if labels[i] == l] for l in set(labels)]
     else:
         return [component]
 
 
-def split_components(components: List[List[int]], adj_mat: np.ndarray, max_cluster_size: int,
-                     random_state: Optional[int] = None) -> List[List[int]]:
+def split_components_spectral_clustering(components: List[List[int]], adj_mat: np.ndarray, max_cluster_size: int,
+                                         random_state: Optional[int] = None) -> List[List[int]]:
     """
     Split a list of graph components each into one or more components.
 
@@ -146,12 +166,82 @@ def split_components(components: List[List[int]], adj_mat: np.ndarray, max_clust
     """
     split = []
     for component in components:
-        split += split_component(component, adj_mat, max_cluster_size, random_state=random_state)
+        split += split_component_spectral_clustering(component, adj_mat, max_cluster_size, random_state=random_state)
 
     return split
 
 
-def _plot_graph_components(ax, components, coords, adj_mat, annotate=False):
+def split_component_kmeans(component: List[int], coords: np.ndarray, adj_mat: np.ndarray, max_cluster_size: int,
+                           random_state: Optional[int] = None) -> List[List[int]]:
+    """
+    Split a graph component into one or more components using kmeans clustering.
+
+    :param component: The component to be split up
+    :param coords: Array of coordinates
+    :param adj_mat: Boolean adjacency matrix with where adj_mat[i][j] == True means node i is connected with node j
+    :param max_cluster_size: Maximum size a component should be
+    :param random_state: Optional seed for the clustering algorithm
+    :return: Possible solution of splitting the given component up as a list of (sub)components.
+    """
+    n_clusters = n_cluster_fits(len(component), max_cluster_size)
+
+    if n_clusters > 1:
+        coords = coords[component]
+        adj_mat = select_matrix_component(adj_mat, component)
+        weights = np.sum(adj_mat, axis=1)
+        labels = kmeans(coords, n_clusters, weights, random_state=random_state)
+        return [[component[i] for i in range(len(labels)) if labels[i] == l] for l in set(labels)]
+    else:
+        return [component]
+
+
+def split_components_kmeans(components: List[List[int]], coords: np.ndarray, adj_mat: np.ndarray,
+                            max_cluster_size: int, random_state: Optional[int] = None) -> List[List[int]]:
+    """
+    Split a list of graph components each into one or more components.
+
+    :param components: List of the components to be split up
+    :param coords: Array of coordinates
+    :param adj_mat: Boolean adjacency matrix with where adj_mat[i][j] == True means node i is connected with node j
+    :param max_cluster_size: Maximum size a component should be
+    :param random_state: Optional seed for the clustering algorithm
+    :return: List of split components if the component > max_cluster_size
+    """
+    intermediate = []
+    for component in components:
+        intermediate += split_component_kmeans(component, coords, adj_mat, max_cluster_size, random_state=random_state)
+
+    splits = split_disjoint_component(adj_mat, intermediate)
+
+    return splits
+
+
+def split_disjoint_component(adj_mat: np.ndarray, intermediate: List[List[int]]) -> List[List[int]]:
+    """
+    Uses the adjacency matrix of a graph to check whether all nodes in a component are actually connected and of not
+    splits them in two separate components.
+
+    :param adj_mat: Boolean adjacency matrix with where adj_mat[i][j] == True means node i is connected with node j
+    :param intermediate: Intermediate component calculation where some components might be disjoint
+    :return: List of fully disjointed components
+    """
+    splits = []
+    for component in intermediate:
+        component_adj_matrix = select_matrix_component(adj_mat, component)
+        split = get_graph_components(component_adj_matrix)
+        split = [[component[i] for i in s] for s in split]
+        splits.extend(split)
+    return splits
+
+
+def _plot_graph_components(ax, components, coords, adj_mat, r=None, annotate=False):
+    if r is not None and r > 0:
+        circles = []
+        for c in coords:
+            circles.append(plt.Circle((c[0], c[1]), r, color=(0.9, 0.9, 0.9), fill=False))
+        coll = PatchCollection(circles, zorder=-2, match_original=True)
+        ax.add_collection(coll)
+
     if annotate:
         for i in range(coords.shape[0]):
             ax.annotate(str(i), coords[i])
@@ -166,7 +256,7 @@ def _plot_graph_components(ax, components, coords, adj_mat, annotate=False):
         lines_x = []
         lines_y = []
         for i, idx1 in enumerate(component):
-            for idx2 in component[i+1:]:
+            for idx2 in component[i + 1:]:
                 if adj_mat[idx1, idx2]:
                     lines_x.append(coords[idx1][0])
                     lines_x.append(coords[idx2][0])
@@ -182,7 +272,6 @@ def _plot_graph_components(ax, components, coords, adj_mat, annotate=False):
 
 
 def _demonstrate():
-    import matplotlib.pyplot as plt
     from collections import Counter
 
     # noinspection PyShadowingNames
@@ -196,11 +285,12 @@ def _demonstrate():
         print()
 
     with np.printoptions(precision=3, edgeitems=30, linewidth=100000):
-        np.random.seed(6)
+        seed = 6
+        np.random.seed(seed)
 
         # n, r, max_cluster_size = 30, 0.15, 4
         n, r, max_cluster_size = 500, 0.05, 10
-        # n, r, max_cluster_size = 10000, 0.009, 25
+        # n, r, max_cluster_size = 10000, 0.01, 25
 
         coords = np.random.random((n, 2))
         annotate = False
@@ -224,19 +314,28 @@ def _demonstrate():
         print()
 
         print(f"Splitting components with size >{max_cluster_size}...")
-        components_split = split_components(components, adj_matrix, max_cluster_size)
+        components_split_knn = split_components_kmeans(components, coords, adj_matrix, max_cluster_size,
+                                                       random_state=seed)
+        components_split_spec = split_components_spectral_clustering(components, adj_matrix, max_cluster_size,
+                                                                     random_state=seed)
         print()
+
         print("Components after splitting:")
-        print(components_split)
-        print_component_dist(components_split)
+        print("Kmeans")
+        print_component_dist(components_split_knn)
+        print("Spectral Clustering")
+        print_component_dist(components_split_spec)
 
         print("plotting")
-        fig, axes = plt.subplots(1, 2)
+        # noinspection PyTypeChecker
+        fig, axes = plt.subplots(1, 3, sharex=True, sharey=True)
         fig.suptitle(f"Clustering, (n, r, m) = ({n}, {r}, {max_cluster_size})", fontsize=16)
         axes[0].set_title(f"Before splitting, n_clusters: {len(components)}")
-        axes[1].set_title(f"After splitting, n_clusters: {len(components_split)}")
-        _plot_graph_components(axes[0], components, coords, adj_matrix, annotate=annotate)
-        _plot_graph_components(axes[1], components_split, coords, adj_matrix, annotate=annotate)
+        axes[1].set_title(f"After split (knn), n_clusters: {len(components_split_knn)}")
+        axes[2].set_title(f"After split (spec), n_clusters: {len(components_split_spec)}")
+        _plot_graph_components(axes[0], components, coords, adj_matrix, annotate=False)
+        _plot_graph_components(axes[1], components_split_knn, coords, adj_matrix, annotate=annotate)
+        _plot_graph_components(axes[2], components_split_spec, coords, adj_matrix, annotate=annotate)
         plt.show()
 
 
