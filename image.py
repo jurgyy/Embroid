@@ -3,7 +3,7 @@ import numba as nb
 
 
 @nb.jit(nb.float64[:](nb.float64[:], nb.float64[:, :]), nopython=True, fastmath=True)
-def colour_distance_jit(color: np.ndarray, palette: np.ndarray) -> np.ndarray:
+def color_distance_jit(color: np.ndarray, palette: np.ndarray) -> np.ndarray:
     """
     Calculate perseptive color distance between a color and a set of other colors.
     Algorithm from compuphase.com/cmetric.htm modified to work on an entire palette of colors.
@@ -28,8 +28,8 @@ def dither(arr: np.ndarray, old_pixel, new_pixel, x: int, y: int, flip_x: bool =
      [3 5 1]] / 16
 
     :param arr: Image float array of shape (w x h x 3)
-    :param old_pixel:
-    :param new_pixel:
+    :param old_pixel: The original pixel RGB value
+    :param new_pixel: The new pixel RGB value
     :param x: Current pixel's x coordinate
     :param y: Current pixel's y coordinate
     :param flip_x: Flip the dithering's direction along the x-axis
@@ -71,7 +71,7 @@ def reduce_color_space(arr: np.ndarray, palette: np.ndarray, use_dither: bool = 
             if flip_x:
                 x = w - 1 - x
             old_pixel = np.copy(arr[y][x])
-            palette_arg = np.argmin(colour_distance_jit(old_pixel, palette))
+            palette_arg = np.argmin(color_distance_jit(old_pixel, palette))
             new_pixel = palette[palette_arg]
 
             arr[y][x] = new_pixel
